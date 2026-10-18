@@ -168,6 +168,8 @@ fn main() -> eframe::Result {
     let svc = services::Desktop::load(recovery.clone());
     if let Some(prefs) = svc.prefs.clone() {
         session.prefs = prefs;
+    } else {
+        session.prefs.theme = "dark".to_string();
     }
     let recovered = recovery_root.as_deref().map(|r| recovery::recover_all(r, &mut session)).unwrap_or_default();
     let mut copies = recovery_root.as_deref().and_then(recovery::Recovery::start);

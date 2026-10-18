@@ -64,8 +64,8 @@ pub fn set(pref: &str, system: Option<&str>) {
 
 /// The [`LANGS`] index for a preference: the first language in it the UI has, else English.
 fn resolve(pref: &str, system: Option<&str>) -> usize {
-    let want = if pref.is_empty() || pref == "system" { system.unwrap_or("pl") } else { pref };
-    want.split(',').find_map(resolve_one).or_else(|| resolve_one("pl")).unwrap_or(0)
+    let want = if pref.is_empty() || pref == "system" { system.unwrap_or("en") } else { pref };
+    want.split(',').find_map(resolve_one).unwrap_or(0)
 }
 
 /// Regions whose Spanish reads the Latin American catalog (es-419): Latin America and the US.
@@ -171,9 +171,9 @@ fn plural(code: &str, n: usize) -> Plural {
         "cs" if n == 1 => Plural::One,
         "cs" if (2..=4).contains(&n) => Plural::Few,
         "cs" => Plural::Other,
-        "ru" if n % 10 == 1 && n % 100 != 11 => Plural::One,
-        "ru" if (2..=4).contains(&(n % 10)) && !(12..=14).contains(&(n % 100)) => Plural::Few,
-        "ru" => Plural::Many,
+        "ru" | "pl" if n % 10 == 1 && n % 100 != 11 => Plural::One,
+        "ru" | "pl" if (2..=4).contains(&(n % 10)) && !(12..=14).contains(&(n % 100)) => Plural::Few,
+        "ru" | "pl" => Plural::Many,
         "ja" | "ko" | "zh-Hans" => Plural::Other,
         "fr" | "pt-BR" if n <= 1 => Plural::One,
         _ if n == 1 => Plural::One,

@@ -1247,8 +1247,8 @@ impl FigApp {
         }
         let dark = match self.session.prefs.theme.as_str() {
             "dark" => true,
-            // The active visuals were set by us last frame (possibly for a manual theme).
-            // Read the integration's OS theme instead; without one, keep the light fallback.
+            "light" => false,
+            // Read the integration's OS theme; without one, keep the light fallback.
             "system" => ctx.system_theme() == Some(egui::Theme::Dark),
             _ => false,
         };
