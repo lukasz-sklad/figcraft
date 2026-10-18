@@ -1,23 +1,233 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="pl">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-  <title>FigCraft</title>
-  <link data-trunk rel="rust" data-bin="figcraft-web" data-cargo-profile="web-release" data-wasm-opt="z" data-wasm-opt-params="--enable-bulk-memory --enable-bulk-memory-opt --enable-nontrapping-float-to-int --enable-sign-ext --enable-reference-types --enable-multivalue" data-weak-refs />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="color-scheme" content="dark">
+  <title>FigCraft — Wektorowe Projektowanie Interfejsów i Prototypowanie (Web)</title>
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+  <meta name="description" content="FigCraft: Otwartoźródłowe, profesjonalne środowisko do projektowania interfejsów i prototypowania w przeglądarce (Rust + WebAssembly + WebGPU/WebGL2).">
+  <link data-trunk rel="rust" data-bin="figcraft-web" data-cargo-profile="web-release" data-wasm-opt="z" data-wasm-opt-params="--enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext --enable-reference-types --enable-multivalue" data-weak-refs />
   <style>
-    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #f5f5f5; }
-    #figcraft_canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-    #figcraft_loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
-      color: #6b6b6b; font: 14px system-ui, sans-serif; pointer-events: none; }
-    @media (prefers-color-scheme: dark) {
-      html, body { background: #2c2c2c; }
-      #figcraft_loading { color: #b8b8b8; }
+    :root { color-scheme: dark; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #1e1e1e;
+      color: #e5e7eb;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
     }
+    canvas#figcraft_canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      outline: none;
+    }
+    #figcraft_loading {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      background: #18181b;
+      z-index: 50;
+      transition: opacity 220ms ease-out;
+    }
+    .brand-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -0.3px;
+      color: #ffffff;
+    }
+    .brand-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #0d99ff, #9747ff);
+      box-shadow: 0 4px 14px rgba(13, 153, 255, 0.35);
+      color: #ffffff;
+      font-size: 19px;
+      font-weight: 900;
+    }
+    .spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid rgba(255, 255, 255, 0.1);
+      border-top-color: #0d99ff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    .progress-box {
+      width: 280px;
+      max-width: 85vw;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .progress-bar {
+      width: 45%;
+      height: 100%;
+      background: linear-gradient(90deg, #0d99ff, #a855f7);
+      animation: pulse 1.8s ease-in-out infinite alternate;
+    }
+    .status-msg {
+      font-size: 13px;
+      font-weight: 500;
+      color: #d1d5db;
+      text-align: center;
+      max-width: 480px;
+      line-height: 1.4;
+      padding: 0 16px;
+    }
+    .status-sub {
+      font-size: 11px;
+      color: #9ca3af;
+      font-variant-numeric: tabular-nums;
+    }
+    .features-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.03);
+      font-size: 11px;
+      color: #9ca3af;
+      margin-top: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes pulse { from { width: 30%; } to { width: 85%; } }
   </style>
 </head>
 <body>
   <canvas id="figcraft_canvas"></canvas>
-  <div id="figcraft_loading">Loading FigCraft&hellip;</div>
+
+  <div id="figcraft_loading">
+    <div class="brand-header">
+      <div class="brand-badge">❖</div>
+      <span>FigCraft</span>
+    </div>
+    <div class="features-pill">
+      <span>PL</span>
+      <span>•</span>
+      <span>Ciemny motyw</span>
+      <span>•</span>
+      <span>WebGPU / WebGL2</span>
+    </div>
+    <div class="spinner"></div>
+    <div class="progress-box"><div class="progress-bar" id="loading_bar"></div></div>
+    <div class="status-msg" id="loading_msg">Inicjalizacja silnika FigCraft…</div>
+    <div class="status-sub" id="loading_sub">Przygotowywanie WebAssembly…</div>
+  </div>
+
+  <script>
+    const CORS_PROXIES = [
+      (u) => `https://lmk.one/api/cors?url=${encodeURIComponent(u)}`,
+      (u) => `https://corsproxy.io/?url=${encodeURIComponent(u)}`
+    ];
+
+    async function fetchWithCorsFallback(fileUrl, fileName) {
+      const isCrossOrigin = /^https?:\/\//i.test(fileUrl) && !fileUrl.startsWith(window.location.origin);
+      const candidates = isCrossOrigin
+        ? [fileUrl, ...CORS_PROXIES.map((fn) => fn(fileUrl))]
+        : [fileUrl];
+
+      let lastErr = null;
+      for (let i = 0; i < candidates.length; i++) {
+        const candidateUrl = candidates[i];
+        const viaProxy = i > 0;
+        try {
+          const resp = await fetch(candidateUrl, {
+            credentials: isCrossOrigin ? "omit" : "same-origin"
+          });
+          if (!resp.ok) {
+            throw new Error(`HTTP ${resp.status}`);
+          }
+          const bytes = new Uint8Array(await resp.arrayBuffer());
+          if (bytes.byteLength === 0) {
+            throw new Error("Pusty plik (0 bajtów)");
+          }
+          return bytes;
+        } catch (err) {
+          lastErr = err;
+          console.warn(`[FigCraft] Próba pobrania (${viaProxy ? "proxy #" + i : "bezpośrednia"}) nie powiodła się:`, err);
+        }
+      }
+      throw lastErr || new Error("Nie udało się pobrać pliku z podanego adresu URL");
+    }
+
+    window.addEventListener("contextmenu", (e) => {
+      if (e.target && e.target.id === "figcraft_canvas") e.preventDefault();
+    });
+
+    // Obsługa parametru ?file=... z automatyczną sekwencją
+    (async () => {
+      const params = new URLSearchParams(window.location.search);
+      const fileUrl = params.get("file");
+      if (!fileUrl) return;
+
+      const cleanPath = fileUrl.split("?")[0].split("#")[0];
+      const fileName = decodeURIComponent(cleanPath.split("/").pop() || "design.fig");
+
+      const msg = document.getElementById("loading_msg");
+      const sub = document.getElementById("loading_sub");
+      if (msg) msg.textContent = `Pobieranie pliku: ${fileName}…`;
+      if (sub) sub.textContent = "Nawiązywanie połączenia…";
+
+      try {
+        const bytes = await fetchWithCorsFallback(fileUrl, fileName);
+        if (msg) msg.textContent = `Wczytywanie projektu: ${fileName}…`;
+        if (sub) sub.textContent = `${(bytes.byteLength / (1024 * 1024)).toFixed(2)} MB pobrane`;
+
+        // Poczekaj na inicjalizację silnika i wstrzyknij plik
+        let attempts = 0;
+        const interval = setInterval(() => {
+          attempts++;
+          const hasFn = typeof window.figcraft_open_file === "function";
+          const canvas = document.getElementById("figcraft_canvas");
+          const loadingGone = !document.getElementById("figcraft_loading");
+
+          if (hasFn || (loadingGone && canvas)) {
+            clearInterval(interval);
+            try {
+              if (hasFn) {
+                window.figcraft_open_file(fileName, bytes);
+              }
+              // Zapasowy dispatch zdarzenia drop na canvas dla eframe
+              if (canvas && typeof DataTransfer !== "undefined") {
+                const dt = new DataTransfer();
+                const file = new File([bytes], fileName, { type: "application/octet-stream" });
+                dt.items.add(file);
+                canvas.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true }));
+              }
+            } catch (openErr) {
+              console.warn("[FigCraft] Błąd podczas otwierania pliku:", openErr);
+            }
+          } else if (attempts > 120) {
+            clearInterval(interval);
+          }
+        }, 150);
+      } catch (err) {
+        console.warn("[FigCraft] Nie udało się wczytać pliku z ?file=:", err);
+      }
+    })();
+  </script>
 </body>
 </html>

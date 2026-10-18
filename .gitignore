@@ -4,6 +4,7 @@ plans/
 /target/
 /target-*/
 /dist/
+/dist-deck/
 /corpus/
 /log/
 .DS_Store

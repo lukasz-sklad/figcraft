@@ -4,8 +4,39 @@ use figcraft_engine::Session;
 use figcraft_ui_egui::{FigApp, Services};
 use wasm_bindgen::JsCast as _;
 
+use std::sync::Mutex;
+use wasm_bindgen::prelude::*;
+
 const CANVAS_ID: &str = "figcraft_canvas";
 const LOADING_ID: &str = "figcraft_loading";
+
+static PENDING_FILES: Mutex<Vec<(String, Vec<u8>)>> = Mutex::new(Vec::new());
+static PENDING_COMMANDS: Mutex<Vec<(String, String)>> = Mutex::new(Vec::new());
+static REPAINT_CTX: Mutex<Option<egui::Context>> = Mutex::new(None);
+
+#[wasm_bindgen]
+pub fn figcraft_open_file(name: String, data: Vec<u8>) {
+    if let Ok(mut lock) = PENDING_FILES.lock() {
+        lock.push((name, data));
+    }
+    if let Ok(c) = REPAINT_CTX.lock() {
+        if let Some(ctx) = c.as_ref() {
+            ctx.request_repaint();
+        }
+    }
+}
+
+#[wasm_bindgen]
+pub fn figcraft_command(cmd: String, params_json: String) {
+    if let Ok(mut lock) = PENDING_COMMANDS.lock() {
+        lock.push((cmd, params_json));
+    }
+    if let Ok(c) = REPAINT_CTX.lock() {
+        if let Some(ctx) = c.as_ref() {
+            ctx.request_repaint();
+        }
+    }
+}
 
 pub fn start() {
     eframe::WebLogger::init(log::LevelFilter::Info).ok();
@@ -39,6 +70,9 @@ pub fn start() {
                     // Live sessions: the browser joins sessions a desktop app hosts; whatever arrives
                     // on the socket wakes the page for a frame.
                     let ctx = cc.egui_ctx.clone();
+                    if let Ok(mut c) = REPAINT_CTX.lock() {
+                        *c = Some(ctx.clone());
+                    }
                     session.live.install(Box::new(figcraft_collab_net::NetLink::new(std::sync::Arc::new(move || ctx.request_repaint()))));
                     let mut fig = FigApp::new(session, Box::new(WebServices { reduce_motion, ctx: cc.egui_ctx.clone() }));
                     // `#join=<link>`: join that session, as opening an invite link does on the desktop.
@@ -54,7 +88,15 @@ pub fn start() {
         if let Some(el) = document.get_element_by_id(LOADING_ID) {
             match result {
                 Ok(()) => el.remove(),
-                Err(e) => el.set_inner_html(&format!("<p>FigCraft failed to start: {e:?}</p><p>A browser with WebGPU or WebGL2 is required.</p>")),
+                Err(e) => {
+                    if !query().contains("webgl") {
+                        if let Some(win) = web_sys::window() {
+                            let _ = win.location().set_search("?webgl");
+                            return;
+                        }
+                    }
+                    el.set_inner_html(&format!("<p style=\"color:#f87171;\">Nie udało się uruchomić FigCraft: {e:?}</p><p>Wymagana jest przeglądarka z obsługą WebGPU lub WebGL2.</p>"));
+                }
             }
         }
     });
@@ -64,6 +106,18 @@ fn query() -> String {
     web_sys::window().and_then(|w| w.location().search().ok()).unwrap_or_default()
 }
 
+fn query_param(name: &str) -> Option<String> {
+    let q = query();
+    q.trim_start_matches('?').split('&').find_map(|kv| {
+        let (k, v) = kv.split_once('=')?;
+        if k == name && !v.is_empty() {
+            Some(v.to_string())
+        } else {
+            None
+        }
+    })
+}
+
 struct WebShell {
     fig: FigApp,
 }
@@ -71,6 +125,20 @@ struct WebShell {
 impl eframe::App for WebShell {
     // `FigApp::ui` runs its own per-frame logic first (fonts, theme), like the desktop app.
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        if let Ok(mut lock) = PENDING_COMMANDS.lock() {
+            for (cmd, params_str) in lock.drain(..) {
+                let params: serde_json::Value = serde_json::from_str(&params_str).unwrap_or(serde_json::Value::Null);
+                self.fig.run(&cmd, params);
+            }
+        }
+        if let Ok(mut lock) = PENDING_FILES.lock() {
+            for (name, bytes) in lock.drain(..) {
+                use base64::Engine as _;
+                let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                let params = serde_json::json!({"data": b64, "name": name});
+                self.fig.run_user("file.open", params);
+            }
+        }
         self.fig.ui(ui);
     }
 }
@@ -113,9 +181,12 @@ impl Services for WebServices {
     fn reduce_motion(&self) -> bool {
         self.reduce_motion.as_ref().is_some_and(web_sys::MediaQueryList::matches)
     }
-    /// The browser's language (`navigator.language`).
+    /// The browser's language (`navigator.language`) or `?lang=` override, defaulting to Polish (pl).
     fn system_language(&self) -> Option<String> {
-        web_sys::window().and_then(|w| w.navigator().language())
+        if let Some(lang) = query_param("lang") {
+            return Some(lang);
+        }
+        web_sys::window().and_then(|w| w.navigator().language()).or_else(|| Some("pl".into()))
     }
     /// The Gamepad API's controllers with the standard mapping (its button order is the layout's;
     /// others are skipped). Browsers list controllers once one of their buttons is pressed.

@@ -64,8 +64,8 @@ pub fn set(pref: &str, system: Option<&str>) {
 
 /// The [`LANGS`] index for a preference: the first language in it the UI has, else English.
 fn resolve(pref: &str, system: Option<&str>) -> usize {
-    let want = if pref.is_empty() || pref == "system" { system.unwrap_or("en") } else { pref };
-    want.split(',').find_map(resolve_one).unwrap_or(0)
+    let want = if pref.is_empty() || pref == "system" { system.unwrap_or("pl") } else { pref };
+    want.split(',').find_map(resolve_one).or_else(|| resolve_one("pl")).unwrap_or(0)
 }
 
 /// Regions whose Spanish reads the Latin American catalog (es-419): Latin America and the US.
