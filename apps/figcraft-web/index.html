@@ -177,6 +177,44 @@
       if (e.target && e.target.id === "figcraft_canvas") e.preventDefault();
     });
 
+    function setAppTheme(targetTheme) {
+      const isLight = targetTheme === "light";
+      const cmd = isLight ? "view.themeLight" : "view.themeDark";
+      const fn = window.figcraft_command || (window.wasmBindings && window.wasmBindings.figcraft_command);
+      if (typeof fn === "function") {
+        try {
+          fn(cmd, "{}");
+        } catch (err) {
+          console.warn("[FigCraft] Błąd przełączania motywu:", err);
+        }
+      }
+    }
+
+    window.addEventListener("message", (event) => {
+      if (!event.data) return;
+      const theme = event.data.theme || (event.data.type === "set_theme" ? event.data.value : null);
+      if (theme === "light" || theme === "dark") {
+        setAppTheme(theme);
+      }
+    });
+
+    if (new URLSearchParams(window.location.search).get("theme") === "light") {
+      try {
+        document.documentElement.style.colorScheme = "light";
+        const loading = document.getElementById("figcraft_loading");
+        if (loading) {
+          loading.style.background = "#f4f4f5";
+          loading.style.color = "#18181b";
+          const brand = loading.querySelector(".brand-header");
+          if (brand) brand.style.color = "#18181b";
+          const msg = document.getElementById("loading_msg");
+          if (msg) msg.style.color = "#27272a";
+          const sub = document.getElementById("loading_sub");
+          if (sub) sub.style.color = "#71717a";
+        }
+      } catch (_) {}
+    }
+
     // Obsługa parametru ?file=... z automatyczną sekwencją
     (async () => {
       const params = new URLSearchParams(window.location.search);

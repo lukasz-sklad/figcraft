@@ -67,7 +67,12 @@ pub fn start() {
                     }
                     let reduce_motion = web_sys::window().and_then(|w| w.match_media("(prefers-reduced-motion: reduce)").ok().flatten());
                     let mut session = Session::new();
-                    session.prefs.theme = "dark".to_string();
+                    let theme_arg = query_param("theme");
+                    let initial_theme = match theme_arg.as_deref() {
+                        Some("light") => "light",
+                        _ => "dark",
+                    };
+                    session.prefs.theme = initial_theme.to_string();
                     // Live sessions: the browser joins sessions a desktop app hosts; whatever arrives
                     // on the socket wakes the page for a frame.
                     let ctx = cc.egui_ctx.clone();
