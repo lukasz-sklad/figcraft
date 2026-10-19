@@ -202,7 +202,7 @@ fn number_field_impl(
     let mut out: Option<Edit> = None;
     let lead_w = match lead {
         Lead::None | Lead::Named(_) => 6.0,
-        Lead::Text(s) => (12.0 + s.chars().count() as f32 * 7.0).max(24.0),
+        Lead::Text(s) => text_lead_width(ui, s, width),
         Lead::Icon(..) => 24.0,
     };
     let lead_rect = Rect::from_min_size(rect.min, vec2(lead_w, FIELD_H));
@@ -217,13 +217,18 @@ fn number_field_impl(
     let hovered = field_resp.hovered() || lead_resp.hovered() || editing.is_some();
     ui.painter().rect_filled(rect, CornerRadius::same(5), t.field);
     if editing.is_some() {
-        ui.painter().rect_stroke(rect, CornerRadius::same(5), Stroke::new(1.0, t.accent), StrokeKind::Inside);
+        ui.painter().rect_stroke(rect, CornerRadius::same(5), Stroke::new(1.0, crate::theme::ACCENT), StrokeKind::Inside);
     } else if hovered {
         ui.painter().rect_stroke(rect, CornerRadius::same(5), Stroke::new(1.0, t.field_hover_border), StrokeKind::Inside);
     }
     match lead {
         Lead::Text(s) => {
-            ui.painter().text(pos2(lead_rect.min.x + 8.0, rect.center().y), Align2::LEFT_CENTER, s, regular(11.0), t.text_secondary);
+            let galley = crate::bidi::name_galley(ui.painter(), s, regular(11.0), t.text_secondary, lead_w - 12.0);
+            // A label cut short shows whole on hover.
+            if galley.elided {
+                lead_resp.clone().on_hover_text(s);
+            }
+            ui.painter().galley(pos2(lead_rect.min.x + 8.0, rect.center().y - galley.size().y / 2.0), galley, t.text_secondary);
         }
         Lead::Icon(i, _) => {
             icons::paint(ui.painter(), Rect::from_center_size(lead_rect.center() + vec2(1.0, 0.0), vec2(14.0, 14.0)), i, t.icon_secondary)
@@ -347,7 +352,8 @@ fn number_field_impl(
                 None => empty.to_string(),
             };
             let col = if value.is_some() { t.text } else { t.text_secondary };
-            ui.painter().text(pos2(edit_rect.min.x, rect.center().y), Align2::LEFT_CENTER, s, regular(11.0), col);
+            // A value too long for its room ends in "…", so a cut number never reads as another.
+            crate::bidi::paint_name(ui.painter(), pos2(edit_rect.min.x, rect.center().y), &s, regular(11.0), col, edit_rect.width());
         }
     }
     // The variable button shows while the pointer is over a bindable field.
@@ -369,6 +375,13 @@ fn number_field_impl(
     (out, bind)
 }
 
+/// The width a text label takes at the start of a field `field_w` wide: the label as drawn plus
+/// its padding, leaving the value room for a few characters (a longer label ends in an ellipsis).
+pub(crate) fn text_lead_width(ui: &Ui, label: &str, field_w: f32) -> f32 {
+    let text = ui.painter().layout_no_wrap(label.to_string(), regular(11.0), Color32::PLACEHOLDER).size().x;
+    (12.0 + text).min(field_w - 32.0).max(24.0)
+}
+
 /// A field bound to a variable: the lead, then the variable's name in a chip; the chip opens the
 /// picker and the detach button unbinds.
 /// A field showing the variable `name` bound to it in `rect`: click to change, detach to unbind.
@@ -383,8 +396,9 @@ pub fn bound_field(ui: &mut Ui, id: Id, lead: Lead, rect: Rect, name: &str) -> O
     let lead_w = match lead {
         Lead::None | Lead::Named(_) => 4.0,
         Lead::Text(s) => {
-            ui.painter().text(pos2(rect.min.x + 8.0, rect.center().y), Align2::LEFT_CENTER, s, regular(11.0), t.text_secondary);
-            (12.0 + s.chars().count() as f32 * 7.0).max(24.0)
+            let w = text_lead_width(ui, s, rect.width());
+            crate::bidi::paint_name(ui.painter(), pos2(rect.min.x + 8.0, rect.center().y), s, regular(11.0), t.text_secondary, w - 12.0);
+            w
         }
         Lead::Icon(i, _) => {
             icons::paint(ui.painter(), Rect::from_center_size(pos2(rect.min.x + 13.0, rect.center().y), vec2(14.0, 14.0)), i, t.icon_secondary);
@@ -493,7 +507,7 @@ fn text_field_in(ui: &mut Ui, id: Id, value: &str, rect: Rect, placeholder: &str
     a11y::text(&resp, name, value);
     ui.painter().rect_filled(rect, CornerRadius::same(5), t.field);
     if editing.is_some() {
-        ui.painter().rect_stroke(rect, CornerRadius::same(5), Stroke::new(1.0, t.accent), StrokeKind::Inside);
+        ui.painter().rect_stroke(rect, CornerRadius::same(5), Stroke::new(1.0, crate::theme::ACCENT), StrokeKind::Inside);
     } else if resp.hovered() {
         ui.painter().rect_stroke(rect, CornerRadius::same(5), Stroke::new(1.0, t.field_hover_border), StrokeKind::Inside);
     }
@@ -501,7 +515,7 @@ fn text_field_in(ui: &mut Ui, id: Id, value: &str, rect: Rect, placeholder: &str
     if started {
         editing = Some(value.to_string());
         ui.memory_mut(|m| m.request_focus(id.with("te")));
-        select_all_next(ui, id.with("te"));
+        select_all_next(ui, id.with("te"), value);
     }
     let mut out = None;
     match editing {
@@ -556,7 +570,7 @@ pub fn text_input(ui: &mut Ui, id: Id, text: &mut String, width: f32, hint: &str
     ui.painter().rect_filled(rect, CornerRadius::same(5), t.field);
     let r = field_editor(ui, rect, id, text, hint);
     if r.has_focus() {
-        ui.painter().rect_stroke(rect, CornerRadius::same(5), Stroke::new(1.0, t.accent), StrokeKind::Inside);
+        ui.painter().rect_stroke(rect, CornerRadius::same(5), Stroke::new(1.0, crate::theme::ACCENT), StrokeKind::Inside);
     } else if ui.rect_contains_pointer(rect) {
         ui.painter().rect_stroke(rect, CornerRadius::same(5), Stroke::new(1.0, t.field_hover_border), StrokeKind::Inside);
     }
@@ -593,21 +607,33 @@ pub fn select_all_on_focus(ui: &Ui, r: &Response, text: &str) {
         ui.data_mut(|d| d.remove::<bool>(pending));
         return;
     }
-    if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), r.id) {
-        let all = egui::text::CCursorRange::two(egui::text::CCursor::new(0), egui::text::CCursor::new(text.chars().count()));
-        state.cursor.set_char_range(Some(all));
-        state.store(ui.ctx(), r.id);
-        ui.ctx().request_repaint();
+    // A key typed in the frame the edit started already replaced the selection laid beforehand.
+    if r.changed() {
+        ui.data_mut(|d| d.remove::<bool>(pending));
+        return;
     }
+    select_all(ui, r.id, text);
+    ui.ctx().request_repaint();
     if !down {
         ui.data_mut(|d| d.remove::<bool>(pending));
     }
 }
 
 /// Has [`select_all_on_focus`] select all of editor `te_id` from now on (an edit that starts
-/// with the editor already focused, which then gains no focus).
-fn select_all_next(ui: &Ui, te_id: Id) {
+/// with the editor already focused, which then gains no focus). Call it before adding the editor:
+/// the text is selected at once, so a key typed in the frame the edit starts (the frame after a
+/// double-click or F2 is often the one with the first key) replaces it.
+fn select_all_next(ui: &Ui, te_id: Id, text: &str) {
     ui.data_mut(|d| d.insert_temp(select_all_id(te_id), true));
+    select_all(ui, te_id, text);
+}
+
+/// Selects all of `text` in editor `te_id`.
+fn select_all(ui: &Ui, te_id: Id, text: &str) {
+    let mut state = egui::TextEdit::load_state(ui.ctx(), te_id).unwrap_or_default();
+    let all = egui::text::CCursorRange::two(egui::text::CCursor::new(0), egui::text::CCursor::new(text.chars().count()));
+    state.cursor.set_char_range(Some(all));
+    state.store(ui.ctx(), te_id);
 }
 
 fn select_all_id(te_id: Id) -> Id {
@@ -948,7 +974,7 @@ pub fn checkbox(ui: &mut Ui, on: bool, label: &str) -> bool {
     let b = Rect::from_min_size(pos2(rect.min.x, rect.center().y - 7.0), vec2(14.0, 14.0));
     if on {
         ui.painter().rect_filled(b, CornerRadius::same(3), t.accent);
-        icons::paint(ui.painter(), b.shrink(1.5), Icon::Check, Color32::WHITE);
+        icons::paint(ui.painter(), b.shrink(1.5), Icon::Check, t.accent_on);
     } else {
         ui.painter().rect_stroke(b, CornerRadius::same(3), Stroke::new(1.0, t.border_strong), StrokeKind::Inside);
     }
@@ -964,9 +990,9 @@ pub fn radio(ui: &mut Ui, on: bool, label: &str) -> bool {
     let c = pos2(rect.min.x + 7.0, rect.center().y);
     if on {
         ui.painter().circle_filled(c, 7.0, t.accent);
-        ui.painter().circle_filled(c, 2.5, Color32::WHITE);
+        ui.painter().circle_filled(c, 2.5, t.accent_on);
     } else {
-        ui.painter().circle_stroke(c, 6.5, Stroke::new(1.0, if resp.hovered() { t.accent } else { t.border_strong }));
+        ui.painter().circle_stroke(c, 6.5, Stroke::new(1.0, if resp.hovered() { crate::theme::ACCENT } else { t.border_strong }));
     }
     ui.painter().text(pos2(rect.min.x + 22.0, rect.center().y), Align2::LEFT_CENTER, label, regular(11.0), t.text);
     resp.clicked()
@@ -982,8 +1008,8 @@ pub fn button(ui: &mut Ui, label: &str, primary: bool, enabled: bool) -> Respons
     a11y::button(&resp, label);
     let hot = enabled && resp.hovered();
     let (fill, text) = match (primary, hot) {
-        (true, false) => (t.accent, Color32::WHITE),
-        (true, true) => (t.accent_hover, Color32::WHITE),
+        (true, false) => (t.accent, t.accent_on),
+        (true, true) => (t.accent_hover, t.accent_on),
         (false, false) => (Color32::TRANSPARENT, t.text),
         (false, true) => (t.hover, t.text),
     };
@@ -1015,12 +1041,12 @@ pub fn text_field_inline(ui: &mut Ui, id: Id, value: &str, rect: Rect, font: egu
     if started {
         buf = Some(value.to_string());
         ui.memory_mut(|m| m.request_focus(te_id));
-        select_all_next(ui, te_id);
+        select_all_next(ui, te_id, value);
     }
     match buf {
         Some(mut text) => {
             ui.painter().rect_filled(rect.expand(2.0), CornerRadius::same(4), t.panel);
-            ui.painter().rect_stroke(rect.expand(2.0), CornerRadius::same(4), Stroke::new(1.0, t.accent), StrokeKind::Inside);
+            ui.painter().rect_stroke(rect.expand(2.0), CornerRadius::same(4), Stroke::new(1.0, crate::theme::ACCENT), StrokeKind::Inside);
             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
             let r = crate::bidi::single_line(&mut child, te_id, &mut text, font, rect.width());
             a11y::own_focus(&r);
